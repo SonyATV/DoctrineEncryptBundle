@@ -1,5 +1,5 @@
 {
-    "name": "ambta/doctrine-encrypt-bundle",
+    "name": "sonyatv/doctrine-encrypt-bundle",
     "type": "library",
     "keywords": ["doctrine", "symfony", "aes256", "rijndael", "encrypt", "decrypt"],
     "license": "MIT",
@@ -11,13 +11,13 @@
         "ext-mcrypt": "*"
     },
     "autoload": {
-        "psr-0": { "Ambta\\DoctrineEncryptBundle": "" }
+        "psr-0": { "SonyATV\\DoctrineEncryptBundle": "" }
     },
-    "target-dir": "Ambta/DoctrineEncryptBundle",
+    "target-dir": "SonyATV/DoctrineEncryptBundle",
     "authors": [
         {
-            "name": "Marcel van Nuil",
-            "email": "marcel@ambta.com"
+            "name": "Frankline Ebichondo",
+            "email": "Frankline.Ebichondo@sonyatv.com"
         }
     ]
 }
