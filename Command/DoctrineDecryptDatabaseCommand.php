@@ -9,6 +9,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
+use Symfony\Component\Console\Helper\ProgressBar;
 
 /**
  * Hello World command for demo purposes.
@@ -18,6 +19,8 @@ use Symfony\Component\Console\Question\ConfirmationQuestion;
  */
 class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
 {
+    protected $entityList = array();
+    protected $propertyList = array();
 
     /**
      * {@inheritdoc}
@@ -43,6 +46,8 @@ class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
 
         //Get list of supported encryptors
         $supportedExtensions = DoctrineEncryptExtension::$supportedEncryptorClasses;
+        
+        $entityManager->getEventManager()->removeEventSubscriber($this->getContainer()->get('ambta_doctrine_encrypt.subscriber'));
 
         //If encryptor has been set use that encryptor else use default
         if($input->getArgument('encryptor')) {
@@ -70,6 +75,9 @@ class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
             if ($metaData->isMappedSuperclass) {
                 continue;
             }
+            
+            $this->propertyList[$metaData->name] = array();
+            
             //Create reflectionClass for each entity
             $reflectionClass = New \ReflectionClass($metaData->name);
             $propertyArray = $reflectionClass->getProperties();
@@ -78,6 +86,10 @@ class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
             foreach($propertyArray as $property) {
                 if($annotationReader->getPropertyAnnotation($property, "Ambta\DoctrineEncryptBundle\Configuration\Encrypted")) {
                     $propertyCount++;
+                    array_push($this->propertyList[$metaData->name], $property);
+                    if(!array_key_exists($metaData->name, $this->entityList)) {
+                        $this->entityList[$metaData->name] = $metaData;
+                    }
                 }
             }
         }
@@ -94,28 +106,14 @@ class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
         $valueCounter = 0;
 
         //Loop through entity manager meta data
-        foreach($metaDataArray as $metaData) {
-            if ($metaData->isMappedSuperclass) {
+        foreach($this->entityList as $metaData) {
+            if(count($this->propertyList[$metaData->name]) == 0) {
                 continue;
             }
 
             //Create reflectionClass for each meta data object
             $reflectionClass = New \ReflectionClass($metaData->name);
-            $propertyArray = $reflectionClass->getProperties();
-            $propertyCount = 0;
-
-            //Count propperties in metadata
-            foreach ($propertyArray as $property) {
-                if ($annotationReader->getPropertyAnnotation($property, "Ambta\DoctrineEncryptBundle\Configuration\Encrypted")) {
-                    $propertyCount++;
-                }
-            }
-
-            if ($propertyCount === 0) {
-                continue;
-            }
-
-
+            
             //If class is not an superclass
             if (!$annotationReader->getClassAnnotation($reflectionClass, "Doctrine\ORM\Mapping\MappedSuperclass")) {
 
@@ -125,56 +123,27 @@ class DoctrineDecryptDatabaseCommand extends ContainerAwareCommand
                  */
                 $repository = $entityManager->getRepository($metaData->name);
                 $entityArray = $repository->findAll();
+                
+                $progress = new ProgressBar($output, count($entityArray));
+                $progress->start();
+
+                $progress = new ProgressBar($output, count($entityArray));
+                $progress->start();
 
                 foreach($entityArray as $entity) {
-
-                    //Create reflectionClass for each entity
-                    $entityReflectionClass = New \ReflectionClass($entity);
-                    $propertyArray = $entityReflectionClass->getProperties();
-
-                    //Get the current encryptor used
-                    $encryptorUsed = $subscriber->getEncryptor();
-
-                    //Loop through the property's in the entity
-                    foreach($propertyArray as $property) {
-
-                        //If property is encrypted
-                        if($annotationReader->getPropertyAnnotation($property, "Ambta\DoctrineEncryptBundle\Configuration\Encrypted")) {
-
-                            //Get and check getters and setters
-                            $methodeName = ucfirst($property->getName());
-
-                            $getter = "get" . $methodeName;
-                            $setter = "set" . $methodeName;
-
-                            //Check if getter and setter are set
-                            if($entityReflectionClass->hasMethod($getter) && $entityReflectionClass->hasMethod($setter)) {
-
-                                //Get decrypted data
-                                $unencrypted = $entity->$getter();
-
-                                //Set raw data
-                                $entity->$setter($unencrypted);
-
-                                $valueCounter++;
-                            }
-                        }
-                    }
-
-                    //Persist entity
-
-                    //Disable the encryptor
-                    $subscriber->setEncryptor(null);
-
+                    $entity = $subscriber->processFields($entity, false);
+                    
                     //Persist and flush entity
                     $entityManager->persist($entity);
                     $entityManager->flush($entity);
-
-                    //Set the encryptor again
-                    $subscriber->setEncryptor($encryptorUsed);
+                    $progress->advance();
                 }
+                
+                $progress->finish();
             }
         }
+        
+        $entityManager->getEventManager()->addEventSubscriber($this->getContainer()->get('ambta_doctrine_encrypt.subscriber'));
 
         //Say it is finished
         $output->writeln("\nDecryption finished values found: " . $valueCounter . ", decrypted: " . $subscriber->decryptCounter . ".\nAll values are now decrypted.");
